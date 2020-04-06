@@ -4,6 +4,15 @@ from torch import nn
 from torch.nn.modules import Module
 from tabulate import tabulate
 
+
+def report_ETA(beginning, start, epochs, e, loss):
+    time_elapsed = time.time() - start
+    time_left    = str(datetime.timedelta(
+        seconds=((time.time() - beginning)/(e+1)*(epochs-(e+1)))))
+    print('Training epoch %s (took %.2f sec, time left %s sec) loss %.8f'%(
+        e, time_elapsed, time_left, loss))
+    return time.time()
+
 class OurModel(nn.Module):
    
     def __init__(self, AR = [1, 3, 3, 1] , AF = 'ReLU' ):               
@@ -80,13 +89,19 @@ class OurModel(nn.Module):
         if not hasattr(self, 'Shift'):
             print('Please preprocess!')
         
+        #print(" Making copies of Data ======== Memory: %s MB ==================== "%str(torch.cuda.memory_allocated()//1e6))    
         x1 = x2 = Data
         
-        for i, Layer in enumerate(self.LinearLayerList1):
+        #print(" x1 Computation =============== Memory: %s MB ==================== "%str(torch.cuda.memory_allocated()//1e6))    
+        for Layer in self.LinearLayerList1:
+            #print("Layer Memory: %s MB =============== "%str(torch.cuda.memory_allocated()//1e6))
             x1 = ActivationFunction(Layer(x1))
+            torch.cuda.empty_cache()
         x1 = self.OutputLayer1(x1).squeeze()
         
-        for i, Layer in enumerate(self.LinearLayerList2):
+        #print(" x2 Computation =============== Memory: %s MB ==================== "%str(torch.cuda.memory_allocated()//1e6))    
+        for Layer in self.LinearLayerList2:
+            #print("Layer Memory: %s MB =============== "%str(torch.cuda.memory_allocated()//1e6))
             x2 = ActivationFunction(Layer(x2))
         x2 = self.OutputLayer2(x2).squeeze()
         
@@ -167,7 +182,7 @@ class OurModel(nn.Module):
         '\nSaving network after epoch(s): ' + str(self.SaveAfterEpoch())
         )
         
-    def Train(self, Data, DataParameters, Labels, L1perUnit=None, UseGPU=True, Name="", Folder=os.getcwd()):
+    def Train(self, Data, DataParameters, Labels, Weights, L1perUnit=None, UseGPU=True, Name="", Folder=os.getcwd()):
         if L1perUnit:
             self.GetL1Max(L1perUnit)
 
@@ -175,38 +190,37 @@ class OurModel(nn.Module):
             self.cuda()
             Data, Parameters      = Data.cuda(), DataParameters.cuda()
             Labels = Labels.cuda()
-        print(" =================== Memory: %s ==================== "%str(torch.cuda.memory_allocated()))
+            Weights = Weights.cuda()
+        #print(" =================== Memory: %s ==================== "%str(torch.cuda.memory_allocated()))
         print(" =================== BEGINNING TRAIN ==================== ")
         beginning = start = time.time()
 
         for e in range(self.NumberOfEpochs):
-            print(" Epoch %d: Computing Output ======== Memory: %s ==================== "%(
-                e+1, str(torch.cuda.memory_allocated())))
+            #print(" Epoch %d: Computing Output ======== Memory: %s ==================== "%(
+            #    e+1, str(torch.cuda.memory_allocated())))
             output          = self.Forward(Data, DataParameters)
-            print(" Epoch %d: Computing Loss ========== Memory: %s ==================== "%(
-                e+1, str(torch.cuda.memory_allocated())))
-            loss            = self.Criterion(output, Labels, Data)
+            #print(" Epoch %d: Computing Loss ========== Memory: %s ==================== "%(
+            #    e+1, str(torch.cuda.memory_allocated())))
+            loss            = self.Criterion(output, Labels.reshape(-1,1), Weights.reshape(-1, 1))
         
             if (e+1) in self.SaveAfterEpoch():
                 start       = report_ETA(beginning, start, self.NumberOfEpochs, e+1, loss)
-                self.Save(Name, Folder)
-                print(" Epoch %d: Saving Model ============ Memory: %s ==================== "%(
-                    e+1, str(torch.cuda.memory_allocated())))
+                self.Save(Name+", %d epoch"%(e+1), Folder)
+                #print(" Epoch %d: Saving Model ============ Memory: %s ==================== "%(
+                #    e+1, str(torch.cuda.memory_allocated())))
                 
-            optimiser.zero_grad()
-            print(" Epoch %d: Backward ================= Memory: %s ==================== "%(
-                e+1, str(torch.cuda.memory_allocated())))
+            self.Optimiser.zero_grad()
+            #print(" Epoch %d: Backward ================= Memory: %s ==================== "%(
+            #    e+1, str(torch.cuda.memory_allocated())))
             loss.backward()
-            optimiser.step()
+            self.Optimiser.step()
             if L1perUnit:
                 self.ClipL1Norm()
 
         print(" ===================   END OF TRAIN   =================== ")
 
-        return model
-    
     def Save(self, Name, Folder):
-        FileName = Folder + Name + '.pth'
+        FileName = Folder + '/' + Name + '.pth'
         torch.save({'StateDict': self.state_dict(), 
                    'Scaling': self.Scaling,
                    'Shift': self.Shift,
@@ -311,7 +325,7 @@ class OurTrainingData():
                 print("--> Please input %d integers to chop each SM file."%(
                     len(self.SMDataFiles)))
                 raise ValueError
-            elif sum([DF.ND >= Limit for (DF, Limit) in zip(self.SMDataFiles, self.SMNLimits)]
+            elif sum([DF.ND >= Limit for (DF, Limit) in zip(self.SMDataFiles, SMNLimits)]
                     ) != len(self.SMDataFiles):
                 print("--> Some chop limit larger than available data in the corresponding file.")
                 print("--> Lengths of the files: "+str(
@@ -358,7 +372,7 @@ class OurTrainingData():
                 print("--> Please input %d integers to chop each SM file."%(
                     len(self.BSMDataList)))
                 raise ValueError
-            elif sum([DF.ND >= Limit for (DF, Limit) in zip(self.BSMDataFiles, self.BSMNLimits)]
+            elif sum([DF.ND >= Limit for (DF, Limit) in zip(self.BSMDataFiles, BSMNLimits)]
                     ) != len(self.SMDataFiles):
                 print("--> Some chop limit larger than available data in the corresponding file.")
                 print("--> Lengths of the files: "+str([DF.ND for DF in self.BSMNLimits]))
@@ -391,6 +405,8 @@ class OurTrainingData():
                                             ).div(self.SMNSampleList[i]) for i in range(len(BSMNRatioDataList))])
         #print("self.SMWeights: "+str(self.SMWeights))
         #print("ReWeighting: "+str(ReWeighting))
+        temp = ([w.mean() for w in self.SMWeights[:self.SMNSample].split(self.SMNSampleList)])
+        print("%.10f, %.10f, %.10f"%(temp[0], temp[1], temp[2]))
         self.SMWeights = self.SMWeights[:self.SMNSample].mul(ReWeighting)
         #print("self.SMWeights: "+str(self.SMWeights))
         #print((self.SMWeights.sum())/np.average(self.SMWeights))
@@ -428,9 +444,10 @@ class OurTrainingData():
         #print([torch.Tensor(w).sum().div(sigma) for (w, sigma) in zip(self.SMFilesWeightsList, self.SMSigmaList)])
         #print([torch.Tensor(w).sum().div(torch.tensor(self.SMSigmaList[0])) for (w) in (self.SMWeightsList)])
         
+        print(["%.10f"%n for n in self.SMSigmaList])
         print('\nLoaded Files:\n')
         print(tabulate({str(self.Parameters): self.SMValuesList, 
-                        "#Events": self.SMNDataList, "XS[pb](avg.w)": self.SMSigmaList}, headers="keys"))
+                        "#Events": self.SMNDataList, "XS[pb](avg.w)": ["%.10f"%n for n in self.SMSigmaList]}, headers="keys"))
         print(' ')
         print(tabulate({ str(self.Parameters): self.BSMValuesList, 
                         "#Events": self.BSMNDataList, "XS[pb](avg.w)": self.BSMSigmaList}, headers="keys"))
@@ -438,5 +455,6 @@ class OurTrainingData():
         print(tabulate({str(self.Parameters): self.BSMValuesList, "#Ev.BSM": self.BSMNDataList
                         , "#Ev.SM": self.SMNSampleList, 
                         "sum.w BSM\/XSBSM": [(self.BSMWeightsList[i].sum())/self.BSMSigmaList[i] for i in range(len(self.BSMWeightsList))],
-                        "sum.w SM\/XSSM": [(self.SMWeightsList[i].sum())/(torch.Tensor(self.SMSigmaList).mean()) for i in range(len(self.SMWeightsList))]
+                        "sum.w SM\/XSSM": [(self.SMWeightsList[i].sum())/(torch.Tensor(self.SMSigmaList).mean()) for i in range(len(self.SMWeightsList))],
+                        "avg.w SM": [w.mean() for w in self.SMWeightsList]
                        }, headers="keys"))
