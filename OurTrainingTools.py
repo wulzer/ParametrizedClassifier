@@ -89,11 +89,7 @@ class OurTrainingData():
             self.BSMDataFiles, self.BSMNDList)]
         self.BSMWeightsList = [DF.Weights[:N] for (DF, N) in zip(
             self.BSMDataFiles, self.BSMNDList)] 
-        self.BSMValuesList = [torch.ones(N)*DF.Values for (DF, N) in zip(
-            self.BSMDataFiles, self.BSMNDList)]
-        
-        self.BSMParValList =  [torch.ones(N, )*DF.Values for (DF, N) in zip(self.BSMDataFiles, self.BSMNDList)]
-        
+        self.BSMParValList =  [torch.ones(N, dtype=torch.double)*DF.Values for (DF, N) in zip(self.BSMDataFiles, self.BSMNDList)]
         self.BSMTargetList = [torch.ones(N, dtype=torch.double) for N in self.BSMNDList] 
         
 ####### Load SM data (stored in SMDataFiles)
