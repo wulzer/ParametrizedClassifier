@@ -216,5 +216,5 @@ class WeightedMSELoss(_Loss):
         
     def __init__(self, size_average=None, reduce=None, reduction='mean'):
         super(WeightedMSELoss, self).__init__(size_average, reduce, reduction)
-        def forward(self, input, target, weight):
-            return torch.mean(torch.mul(weight, (input - target)**2))
+    def forward(self, input, target, weight):
+        return torch.mean(torch.mul(weight, (input - target)**2))
