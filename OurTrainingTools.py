@@ -50,8 +50,6 @@ class OurTrainingData():
 ####### Load BSM data (stored in self.BSMDataFiles)
         if type(BSMfilepathlist) == list:
             if all(isinstance(n, str) for n in BSMfilepathlist):
-                #self.BSMFilePathList = BSMfilepathlist
-                #self.BSMNumFiles = len(self.BSMFilePathList)
                 self.BSMDataFiles = []
                 for path in BSMfilepathlist:
                     temp =  DataFile(path, verbose=verbose)
@@ -105,13 +103,13 @@ class OurTrainingData():
                 self.SMDataFiles = []
                 for path in SMfilepathlist:
                     temp =  DataFile(path, verbose=verbose)
-                    if( (temp.Process == self.Process) and (temp.Parameters == self.Parameters) and (temp.Values == 0.) ):
+                    if( (temp.Process == self.Process) and (temp.Parameters == 'SM') and (temp.Values == 0.) ):
                        self.SMDataFiles.append(temp)
                     else:
                         print('File not valid: ' + path)
                         print('Parameters = ' + str(temp.Parameters) + ', Process = ' + str(temp.Process) 
                               +' and Values = ' + str(temp.Values.tolist()))
-                        print('should be = ' + str(self.Parameters) + ', = ' + str(self.Process) 
+                        print('should be = ' + 'SM'+ ', = ' + str(self.Process) 
                               + ' and = ' + str(0.))
                         self.SMDataFiles.append(None)                    
             else:
