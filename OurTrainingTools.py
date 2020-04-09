@@ -14,11 +14,12 @@ class DataFile():
     def __init__(self, FilePath, verbose=True):
         if verbose: print('\nReading file ...' + FilePath)
         file = h5py.File(FilePath, 'r')
-        if list(file.keys()) == ['Data', 'Info', 'Parameters', 'Values', 'Weights']:
+        if list(file.keys()) == ['Data', 'Info', 'Parameters', 'Process', 'Values', 'Weights']:
             if( (len(file['Parameters'][()]) == len(file['Values'][()])) and (len(file['Data'][()]) == len(file['Weights'][()])) ):
                 if verbose: print('##### File Info:\n' + file['Info'][()][0] + '\n#####')
                 self.FilePath = FilePath
                 self.Info = file['Info'][()][0]
+                self.Process = file['Process'][()][0]
                 self.Parameters = file['Parameters'][()]
                 #print(file['Values'][()].dtype)
                 #print('%.15f' % (file['Data'][()][0][0]))
@@ -31,17 +32,19 @@ class DataFile():
                 print('--> File not valid:\nunequal lenght of Values and Parameters or of Data and Weights')
                 raise ValueError
         else:
-            print('--> File format not valid:\nKeys: ' + print(list(file.keys())) + 
-                  'should be ' + print(['Data', 'Info', 'Parameters', 'Values', 'Weights']))
+            print('--> File format not valid:\nKeys: ' + str(list(file.keys())) + 
+                  '\nshould be: ' + str(['Data', 'Info', 'Parameters', 'Process', 'Values', 'Weights']))
             raise ValueError
 
 class OurTrainingData():
 ### Imports data for training. The Return() methods returns [self.Data, self.Labels, self.Weights, self.ParVal]
 ### All values are in double precision
 ### Inputs are the SM and BSM file paths and list of integers to chop the datasets if needed
-    def __init__(self, SMfilepathlist, BSMfilepathlist, parameters, SMNLimits="NA", BSMNLimits="NA", verbose=True): 
+### Weights are normalized to have average = 1 on the entire training sample
+    def __init__(self, SMfilepathlist, BSMfilepathlist, process, parameters, SMNLimits="NA", BSMNLimits="NA", verbose=True): 
+        self.Process = process
         self.Parameters = parameters
-        if verbose: print('Loading Data Files with Parameters: ' + str(self.Parameters) ) 
+        if verbose: print('Loading Data Files for Process: ' + str(self.Process) +', with new physics Parameters: ' + str(self.Parameters) ) 
         if len(self.Parameters)!= 1: print('Only 1D Implemented in Training !')   
           
 ####### Load BSM data (stored in self.BSMDataFiles)
@@ -52,12 +55,14 @@ class OurTrainingData():
                 self.BSMDataFiles = []
                 for path in BSMfilepathlist:
                     temp =  DataFile(path, verbose=verbose)
-                    if( (temp.Parameters == self.Parameters) and (temp.Values != 0.) ):
+                    if( (temp.Process == self.Process) and (temp.Parameters == self.Parameters) and (temp.Values != 0.) ):
                         self.BSMDataFiles.append(temp)
                     else: 
                         print('File not valid: ' + path)
-                        print('Parameters = ' + str(temp.Parameters) + ' and Values = ' + str(temp.Values.tolist()))
-                        print('should be = ' + str(self.Parameters) + ' and != ' + str(0.))
+                        print('Parameters = ' + str(temp.Parameters) + ', Process = ' + str(temp.Process) 
+                              +' and Values = ' + str(temp.Values.tolist()))
+                        print('should be = ' + str(self.Parameters) + ', = ' + str(self.Process) 
+                              + ' and != ' + str(0.))
                         raise ValueError
                         self.BSMDataFiles.append(None) 
             else:
@@ -100,13 +105,15 @@ class OurTrainingData():
                 self.SMDataFiles = []
                 for path in SMfilepathlist:
                     temp =  DataFile(path, verbose=verbose)
-                    if( (temp.Parameters == self.Parameters) and (temp.Values == 0.) ):
+                    if( (temp.Process == self.Process) and (temp.Parameters == self.Parameters) and (temp.Values == 0.) ):
                        self.SMDataFiles.append(temp)
                     else:
-                       print('File not valid: ' + path)
-                       print('Parameters = ' + str(temp.Parameters) + ' and Values = ' + str(temp.Values.tolist()))
-                       print('should be = ' + str(self.Parameters) + ' and = ' + str(0.))
-                       self.SMDataFiles.append(None)                    
+                        print('File not valid: ' + path)
+                        print('Parameters = ' + str(temp.Parameters) + ', Process = ' + str(temp.Process) 
+                              +' and Values = ' + str(temp.Values.tolist()))
+                        print('should be = ' + str(self.Parameters) + ', = ' + str(self.Process) 
+                              + ' and = ' + str(0.))
+                        self.SMDataFiles.append(None)                    
             else:
                 print('SMfilepathlist input should be a list of strings !')
                 raise FileNotFoundError
@@ -148,14 +155,8 @@ class OurTrainingData():
     ##### Reweighting is performed such that the SUM of the SM weights in each block equals the number of BSM data times the AVERAGE 
     ##### of the original weights. This equals the SM cross-section as obtained in the specific sample at hand, times NBSM
         self.UsedSMWeightsList = self.SMWeights[:sum(self.UsedSMNDList)].split(self.UsedSMNDList)
-        self.UsedSMWeightsList = [ self.UsedSMWeightsList[i]*self.BSMNDList[i]/self.UsedSMNDList[i] for i in range(len(BSMNRatioDataList))]
-        
-        #ReWeighting = torch.cat([torch.ones(self.UsedSMNDList[i], dtype=torch.double).mul(self.BSMNDList[i]
-                                          #  ).div(self.UsedSMNDList[i]) for i in range(len(BSMNRatioDataList))])
-        #self.UsedSMWeightsList = self.SMWeights[:sum(self.UsedSMNDList)].mul(ReWeighting).split(self.UsedSMNDList)
-        
-        self.UsedSMParValList =  [torch.ones(N, dtype=torch.double)*DF.Values for (DF, N) in zip(self.BSMDataFiles, self.UsedSMNDList)]
-        
+        self.UsedSMWeightsList = [ self.UsedSMWeightsList[i]*self.BSMNDList[i]/self.UsedSMNDList[i] for i in range(len(BSMNRatioDataList))]      
+        self.UsedSMParValList =  [torch.ones(N, dtype=torch.double)*DF.Values for (DF, N) in zip(self.BSMDataFiles, self.UsedSMNDList)]       
         self.UsedSMTargetList = [torch.zeros(N, dtype=torch.double) for N in self.UsedSMNDList]
 
 ####### Join SM with BSM data
@@ -175,6 +176,10 @@ class OurTrainingData():
             [torch.cat([self.UsedSMParValList[i], self.BSMParValList[i]]
                                   ) for i in range(len(self.BSMParValList))]
             )
+        
+####### Final reweighting
+        avg = self.Weights.mean()
+        self.Weights = self.Weights.div(avg)
 
 ####### If verbose, display report
         if verbose: self.Report()
@@ -194,9 +199,10 @@ class OurTrainingData():
                         "#Data":[ file.ND for file in self.BSMDataFiles ], 
                         "XS[pb](avg.w)":[ file.XS for file in self.BSMDataFiles ]}, headers="keys"))
         print('\nPaired BSM/SM Datasets:\n')
+        ### Check should be nearly equal to #EV.BSM. It is computed with the weights BEFORE final reweighting
         print(tabulate({str(self.Parameters): [ file.Values for file in self.BSMDataFiles ], "#Ev.BSM": self.BSMNDList
                         , "#Ev.SM": self.UsedSMNDList,
-                        "sum.w SM\/XSSM": [(self.UsedSMWeightsList[i].sum())/(self.SMWeights.mean()) for i in range(len(self.BSMDataFiles))]
+                        "Check": [(self.UsedSMWeightsList[i].sum())/(self.SMWeights.mean()) for i in range(len(self.BSMDataFiles))]
                        }, headers="keys"))     
         
 ####### Loss function(s), with "input" in (0,1) interval
