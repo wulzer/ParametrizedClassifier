@@ -40,7 +40,7 @@ class OurTrainingData():
 ### Imports data for training. The Return() methods returns [self.Data, self.Labels, self.Weights, self.ParVal]
 ### All values are in double precision
 ### Inputs are the SM and BSM file paths and list of integers to chop the datasets if needed
-### Weights are normalized to have average = 1 on the entire training sample
+### Weights are normalized to have sum = 1 on the entire training sample
     def __init__(self, SMfilepathlist, BSMfilepathlist, process, parameters, SMNLimits="NA", BSMNLimits="NA", verbose=True): 
         self.Process = process
         self.Parameters = parameters
@@ -176,8 +176,8 @@ class OurTrainingData():
             )
         
 ####### Final reweighting
-        avg = self.Weights.mean()
-        self.Weights = self.Weights.div(avg)
+        s = self.Weights.sum()
+        self.Weights = self.Weights.div(s)
 
 ####### If verbose, display report
         if verbose: self.Report()
@@ -211,10 +211,10 @@ class _Loss(Module):
             self.reduction = _Reduction.legacy_get_string(size_average, reduce)
         else:
             self.reduction = reduction
-class WeightedMSELoss(_Loss):
+class WeightedSELoss(_Loss):
     __constants__ = ['reduction']
         
     def __init__(self, size_average=None, reduce=None, reduction='mean'):
-        super(WeightedMSELoss, self).__init__(size_average, reduce, reduction)
+        super(WeightedSELoss, self).__init__(size_average, reduce, reduction)
     def forward(self, input, target, weight):
-        return torch.mean(torch.mul(weight, (input - target)**2))
+        return torch.sum(torch.mul(weight, (input - target)**2))
