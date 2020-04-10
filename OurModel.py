@@ -10,14 +10,13 @@ class _Loss(Module):
         else:
             self.reduction = reduction
 
-class WeightedMSELoss(_Loss):
+class WeightedSELoss(_Loss):
     __constants__ = ['reduction']
-
-    def __init__(self, size_average=None, reduce=None, reduction='mean'):
-        super(WeightedMSELoss, self).__init__(size_average, reduce, reduction)
-
+        
+    def __init__(self, size_average=None, reduce=None, reduction='sum'):
+        super(WeightedSELoss, self).__init__(size_average, reduce, reduction)
     def forward(self, input, target, weight):
-        return torch.mean(torch.mul(weight, (input - target)**2))
+        return torch.sum(torch.mul(weight, (input - target)**2))
 
 def report_ETA(beginning, start, epochs, e, loss):
     time_elapsed = time.time() - start
@@ -146,7 +145,7 @@ class OurModel(nn.Module):
         Parameters = Parameters/self.ParameterScaling
         return Data, Parameters
     
-    def Save(self, Name, Folder):
+    def Save(self, Name, Folder, csvFormat=False):
 ### Saves the model in Folder/Name
         FileName = Folder + Name + '.pth'
         torch.save({'StateDict': self.state_dict(), 
@@ -156,6 +155,13 @@ class OurModel(nn.Module):
                    FileName)
         print('Model successfully saved.')
         print('Path: %s'%str(FileName))
+        
+        if cscFormat:
+            parameters = [w.detach().tolist() for w in self.parameters()]
+            np.savetxt(Folder + Name + ' (StateDict).csv', parameters, %s)
+            statistics = [self.Shift.detach().tolist(), self.Scaling.detach().tolist(), 
+                          self.ParameterScaling.detch().tolist()]
+            np.savetxt(Folder + Name + ' (Statistics).csv', statistics, %s)
     
     def Load(self, Name, Folder):
 ### Loads the model from Folder/Name
