@@ -94,19 +94,7 @@ class OurModel(nn.Module):
         return (rho.div(1.+rho)).view(-1, 1)
     
     def GetL1Bound(self, L1perUnit):
-### Max L1 norm of weights at each layer. What about bias? Excluding the first layer?
         self.L1perUnit = L1perUnit
-        L1MaxList = []
-        for m in self.children():
-            if isinstance(m, nn.Linear):
-                L1MaxList.append(m.weight.size(0)*m.weight.size(1) \
-                                  *self.L1perUnit)
-            else:
-                for mm in m:
-                    L1MaxList.append(mm.weight.size(0)*mm.weight.size(1)\
-                                      *self.L1perUnit)
-        self.L1MaxList = L1MaxList
-        print('L1MaxList created.')
     
     def ClipL1Norm(self):
 ### Clip the weights      
