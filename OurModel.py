@@ -211,6 +211,7 @@ class OurTrainer(nn.Module):
     def __init__(self, LearningRate = 1e-3, LossFunction = 'Quadratic', Optimiser = 'Adam', NumEpochs = 100):
         super(OurTrainer, self).__init__() 
         self.NumberOfEpochs = NumEpochs
+        self.SaveAfterEpoch = lambda :[self.NumberOfEpochs,]
         self.InitialLearningRate = LearningRate
         ValidCriteria = {'Quadratic': WeightedSELoss()}
         try:
@@ -260,22 +261,24 @@ class OurTrainer(nn.Module):
         
         Optimiser = self.Optimiser(tempmodel.parameters(), self.InitialLearningRate)
         mini_batch_size = bs
+        beginning = start = time.time()
         for e in range(self.NumberOfEpochs):
             #print("epoch")
             Optimiser.zero_grad()
-            i = 0
             for b in range(0, Data.size(0), mini_batch_size):
-                i +=1
                 torch.cuda.empty_cache()
                 output          = tempmodel.Forward(tempData[b:b+mini_batch_size], tempParameters[b:b+mini_batch_size])
                 loss            = self.Criterion(output, tempLabels[b:b+mini_batch_size].reshape(-1,1), 
                                                  tempWeights[b:b+mini_batch_size].reshape(-1, 1))               
                 loss.backward()
-            with torch.no_grad():
-                print((next(tempmodel.parameters())).grad[0,0])
-                
-            print(i)
             Optimiser.step()
+            
+            if (e+1) in self.SaveAfterEpoch():
+                start       = report_ETA(beginning, start, self.NumberOfEpochs, e+1, loss)
+                tempmodel.Save(Name + "%d epoch"%(e+1), Folder)
+        
+        tempmodel.Save(Name + 'Final', Folder, csvFormat=True)
+        
         return tempmodel.cpu()
     
     def SetNumberOfEpochs(self, NE):
@@ -284,4 +287,10 @@ class OurTrainer(nn.Module):
     def SetInitialLearningRate(self,ILR):
         self.InitialLearningRate = ILR
         self.Optimiser = torch.optim.Adam(self.parameters(), self.InitialLearningRate)
+        
+    def SetSaveAfterEpochs(self,SAE):
+        SAE.sort()
+        self.SaveAfterEpoch = lambda : SAE
+
+
    
