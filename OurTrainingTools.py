@@ -203,18 +203,3 @@ class OurTrainingData():
                         "Check": [(self.UsedSMWeightsList[i].sum())/(self.SMWeights.mean()) for i in range(len(self.BSMDataFiles))]
                        }, headers="keys"))     
         
-####### Loss function(s), with "input" in (0,1) interval
-class _Loss(Module):
-    def __init__(self, size_average=None, reduce=None, reduction='mean'):
-        super(_Loss, self).__init__()
-        if size_average is not None or reduce is not None:
-            self.reduction = _Reduction.legacy_get_string(size_average, reduce)
-        else:
-            self.reduction = reduction
-class WeightedSELoss(_Loss):
-    __constants__ = ['reduction']
-        
-    def __init__(self, size_average=None, reduce=None, reduction='mean'):
-        super(WeightedSELoss, self).__init__(size_average, reduce, reduction)
-    def forward(self, input, target, weight):
-        return torch.sum(torch.mul(weight, (input - target)**2))

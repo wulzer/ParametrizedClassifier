@@ -2,6 +2,7 @@ import torch, os, time, datetime
 from torch import nn
 from torch.nn.modules import Module
 
+####### Loss function(s), with "input" in (0,1) interval
 class _Loss(Module):
     def __init__(self, size_average=None, reduce=None, reduction='mean'):
         super(_Loss, self).__init__()
@@ -9,16 +10,15 @@ class _Loss(Module):
             self.reduction = _Reduction.legacy_get_string(size_average, reduce)
         else:
             self.reduction = reduction
-
-class WeightedMSELoss(_Loss):
+class WeightedSELoss(_Loss):
     __constants__ = ['reduction']
-
+        
     def __init__(self, size_average=None, reduce=None, reduction='mean'):
-        super(WeightedMSELoss, self).__init__(size_average, reduce, reduction)
-
+        super(WeightedSELoss, self).__init__(size_average, reduce, reduction)
     def forward(self, input, target, weight):
-        return torch.mean(torch.mul(weight, (input - target)**2))
-
+        return torch.sum(torch.mul(weight, (input - target)**2))
+    
+####### Loss function(s), with "input" in (0,1) interval
 def report_ETA(beginning, start, epochs, e, loss):
     time_elapsed = time.time() - start
     time_left    = str(datetime.timedelta(
@@ -208,3 +208,82 @@ class OurModel(nn.Module):
         self.Scaling = self.Scaling.cpu()
         self.ParameterScaling = self.ParameterScaling.cpu()
         return nn.Module.cpu(self)
+
+    
+import copy
+def OurCudaTensor(input):
+    output = copy.deepcopy(input)
+    output = output.cuda()
+    return output
+
+class OurTrainer(nn.Module):
+### Contains all parameters for training: Loss Function, Optimiser, NumberOfEpochs, InitialLearningRate, SaveAfterEpoch 
+    def __init__(self, LearningRate = 1e-3, LossFunction = 'Quadratic', Optimiser = 'Adam', NumEpochs = 100):
+        super(OurTrainer, self).__init__() 
+        self.NumberOfEpochs = NumEpochs
+        self.InitialLearningRate = LearningRate
+        ValidCriteria = {'Quadratic': WeightedSELoss()}
+        try:
+            self.Criterion = ValidCriteria[LossFunction]
+        except KeyError:
+            print('The loss function specified is not valid. Allowed losses are %s.'
+                 %str(list(ValidCriteria)))
+            print('Will use Quadratic Loss.') 
+        ValidOptimizers = {'Adam': torch.optim.Adam}
+        try:
+            self.Optimiser =  ValidOptimizers[Optimiser]
+        except KeyError:
+            print('The specified optimiser is not valid. Allowed optimisers are %s.'
+                 %str(list(ValidOptimisers)))
+            print('Will use Adam.')          
+    
+    def EstimateRequiredGPUMemory(self, model, Data, Parameters):
+        if next(model.parameters()).is_cuda:
+            print('Model is on cuda. No estimate possible anymore.')
+            return None
+        else:
+            before = torch.cuda.memory_allocated()
+            print(before)
+            ### Always make deep copy of objects before sending them to cuda. Delete when done
+            ModelCuda = copy.deepcopy(model)
+            ModelCuda.cuda()
+            DataCuda = OurCudaTensor(Data[:10000])
+            ParametersCuda = OurCudaTensor(Parameters[:10000])
+            print(torch.cuda.memory_allocated())
+            MF = ModelCuda.Forward(DataCuda, ParametersCuda)
+            after = torch.cuda.memory_allocated()
+            print(after)
+            del ModelCuda, DataCuda, ParametersCuda, MF
+            torch.cuda.empty_cache()        
+            estimate = float(Data.size()[0])/1e4*float(after-before)*1e-9
+            print(str(estimate) + ' GB')
+            return estimate
+        
+    def Train(self, model, Data, Parameters, Labels, Weights, bs = 100000, L1perUnit=None, UseGPU=True, Name="", Folder=os.getcwd()):
+        
+        tempmodel = copy.deepcopy(model)
+        tempmodel.cuda()
+        tempData = OurCudaTensor(Data)
+        tempParameters = OurCudaTensor(Parameters)
+        tempLabels = OurCudaTensor(Labels)
+        tempWeights = OurCudaTensor(Weights)
+        
+        Optimiser = self.Optimiser(tempmodel.parameters(), self.InitialLearningRate)
+        mini_batch_size = bs
+        for e in range(self.NumberOfEpochs):
+            #print("epoch")
+            Optimiser.zero_grad()
+            i = 0
+            for b in range(0, Data.size(0), mini_batch_size):
+                i +=1
+                torch.cuda.empty_cache()
+                output          = tempmodel.Forward(tempData[b:b+mini_batch_size], tempParameters[b:b+mini_batch_size])
+                loss            = self.Criterion(output, tempLabels[b:b+mini_batch_size].reshape(-1,1), 
+                                                 tempWeights[b:b+mini_batch_size].reshape(-1, 1))               
+                loss.backward()
+            with torch.no_grad():
+                print((next(tempmodel.parameters())).grad[0,0])
+                
+            print(i)
+            Optimiser.step()
+        return tempmodel.cpu()
