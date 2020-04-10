@@ -277,3 +277,11 @@ class OurTrainer(nn.Module):
             print(i)
             Optimiser.step()
         return tempmodel.cpu()
+    
+    def SetNumberOfEpochs(self, NE):
+        self.NumberOfEpochs = NE
+        
+    def SetInitialLearningRate(self,ILR):
+        self.InitialLearningRate = ILR
+        self.Optimiser = torch.optim.Adam(self.parameters(), self.InitialLearningRate)
+   
