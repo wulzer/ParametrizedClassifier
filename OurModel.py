@@ -91,42 +91,32 @@ class OurModel(nn.Module):
         return (rho.div(1.+rho)).view(-1, 1)
     
     def GetL1Bound(self, L1perUnit):
-### Max L1 norm of weights at each layer. What about bias? Excluding the first layer?
         self.L1perUnit = L1perUnit
-        L1MaxList = []
-        for m in self.children():
-            if isinstance(m, nn.Linear):
-                L1MaxList.append(m.weight.size(0)*m.weight.size(1) \
-                                  *self.L1perUnit)
-            else:
-                for mm in m:
-                    L1MaxList.append(mm.weight.size(0)*mm.weight.size(1)\
-                                      *self.L1perUnit)
-        self.L1MaxList = L1MaxList
-        print('L1MaxList created.')
     
     def ClipL1Norm(self):
 ### Clip the weights      
-        def ClipL1NormLayer(DesignatedL1Max, Layer):
+        def ClipL1NormLayer(DesignatedL1Max, Layer, Counter):
+            if Counter == 1:
+                ### this avoids clipping the first layer
+                return
             L1 = Layer.weight.abs().sum()
             Layer.weight.masked_scatter_(L1 > DesignatedL1Max, 
                                         Layer.weight*(DesignatedL1Max/L1))
+            return
         
         Counter = 0
         for m in self.children():
             if isinstance(m, nn.Linear):
                 Counter += 1
                 with torch.no_grad():
-                    DesignatedL1Max = self.L1MaxList[counter-1]
-                    if Counter != 1: ClipL1NormLayer(DesignatedL1Max, m)
-                    ### this avoids clipping the first layer
+                    DesignatedL1Max = m.weight.size(0)*m.weight.size(1)*self.L1perUnit
+                    ClipL1NormLayer(DesignatedL1Max, m, Counter)
             else:
                 for mm in m:
                     Counter +=1
                     with torch.no_grad():
-                        DesignatedL1Max = self.L1MaxList[counter-1]
-                        if Counter != 1: ClipL1NormLayer(DesignatedL1Max, mm)
-                        ### this avoids clipping the first layer
+                        DesignatedL1Max = mm.weight.size(0)*m.weight.size(1)*self.L1perUnit
+                        ClipL1NormLayer(DesignatedL1Max, mm, Counter)
         return 
     
     def DistributionRatio(self, points):
