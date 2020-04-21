@@ -344,7 +344,7 @@ class OurModel(nn.Module):
         Parameters = Parameters/self.ParameterScaling
         return Data, Parameters
     
-    def Save(self, Name, Folder):
+    def Save(self, Name, Folder, csvFormat=False):
 ### Saves the model in Folder/Name
         FileName = Folder + Name + '.pth'
         torch.save({'StateDict': self.state_dict(), 
@@ -354,6 +354,13 @@ class OurModel(nn.Module):
                    FileName)
         print('Model successfully saved.')
         print('Path: %s'%str(FileName))
+        
+        if csvFormat:
+            modelparams = [w.detach().tolist() for w in self.parameters()]
+            np.savetxt(Folder + Name + ' (StateDict).csv', modelparams, '%s')
+            statistics = [self.Shift.detach().tolist(), self.Scaling.detach().tolist(),
+                         self.ParameterScaling.detach().tolist()]
+            np.savetxt(Folder + Name + ' (Statistics).csv', statistics, '%s')
     
     def Load(self, Name, Folder):
 ### Loads the model from Folder/Name
@@ -374,9 +381,9 @@ class OurModel(nn.Module):
             print('Loading model failed. ')
             return 
         
-        self.Scaling = torch.load(ModelPath + Name + '.pth')['Scaling']
-        self.Shift = torch.load(ModelPath + Name + '.pth')['Shift']
-        self.ParameterScaling = torch.load(ModelPath + Name + '.pth')['ParameterScaling']
+        self.Scaling = torch.load(FileName)['Scaling']
+        self.Shift = torch.load(FileName)['Shift']
+        self.ParameterScaling = torch.load(FileName)['ParameterScaling']
         
         print('Model successfully loaded.')
         print('Path: %s'%str(FileName))
@@ -476,7 +483,7 @@ class OurTrainer(nn.Module):
             
             if (e+1) in self.SaveAfterEpoch():
                 start       = report_ETA(beginning, start, self.NumberOfEpochs, e+1, loss)
-                tempmodel.Save(Name + "%d epoch"%(e+1), Folder)
+                tempmodel.Save(Name + "%d epoch"%(e+1), Folder, csvFormat=True)
         
         tempmodel.Save(Name + 'Final', Folder, csvFormat=True)
         
