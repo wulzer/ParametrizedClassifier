@@ -72,7 +72,7 @@ class OurTrainingData():
                   
 ###### Chop the BSM data sets (stored in BSMNDList, BSMDataList, BSMWeightsList, BSMParValList, BSMTargetList)
         if type(BSMNLimits) == int:
-            BSMNLimits = [BSMNLimits for data in self.BSMDataFiles]
+            BSMNLimits = [min(BSMNLimits, NF.ND) for NF in self.BSMDataFiles]
         elif type(BSMNLimits) == list and all(isinstance(n, int) for n in BSMNLimits):
             if len(BSMNLimits) != len(self.BSMDataFiles):
                 print("--> Please input %d integers to chop each SM file."%(
@@ -153,7 +153,7 @@ class OurTrainingData():
     ##### Reweighting is performed such that the SUM of the SM weights in each block equals the number of BSM data times the AVERAGE 
     ##### of the original weights. This equals the SM cross-section as obtained in the specific sample at hand, times NBSM
         self.UsedSMWeightsList = self.SMWeights[:sum(self.UsedSMNDList)].split(self.UsedSMNDList)
-        self.UsedSMWeightsList = [ self.UsedSMWeightsList[i]*self.BSMNDList[i]/self.UsedSMNDList[i] for i in range(len(BSMNRatioDataList))]      
+        self.UsedSMWeightsList = [ self.UsedSMWeightsList[i]*self.BSMNDList[i]/self.UsedSMNDList[i] for i in range(len(BSMNRatioDataList))]   
         self.UsedSMParValList =  [torch.ones(N, dtype=torch.double)*DF.Values for (DF, N) in zip(self.BSMDataFiles, self.UsedSMNDList)]       
         self.UsedSMTargetList = [torch.zeros(N, dtype=torch.double) for N in self.UsedSMNDList]
 
