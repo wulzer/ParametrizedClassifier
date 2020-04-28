@@ -121,7 +121,7 @@ class OurTrainingData():
             
 ####### Chop the SM data sets and join them in one (stored in SMND, SMData and SMWeights)
         if type(SMNLimits) == int:
-            SMNLimits = [SMNLimits for data in self.SMDataFiles]
+            SMNLimits = [min(SMNLimits, DF.ND) for DF in self.SMDataFiles]
         elif type(SMNLimits) == list and all(isinstance(n, int) for n in SMNLimits):
             if len(SMNLimits) != len(self.SMDataFiles):
                 print("--> Please input %d integers to chop each SM file."%(
