@@ -201,7 +201,16 @@ class OurTrainingData():
         print(tabulate({str(self.Parameters): [ file.Values for file in self.BSMDataFiles ], "#Ev.BSM": self.BSMNDList
                         , "#Ev.SM": self.UsedSMNDList,
                         "Check": [(self.UsedSMWeightsList[i].sum())/(self.SMWeights.mean()) for i in range(len(self.BSMDataFiles))]
-                       }, headers="keys"))     
+                       }, headers="keys"))    
+        
+####### Convert Angles
+    def CurateAngles(self, AnglePos):
+        Angles = self.Data[:, AnglePos]
+        CuratedAngles = torch.cat([torch.sin(Angles), torch.cos(Angles)], dim=1)
+        OtherPos = list(set(range(self.Data.size(1)))-set([3,5]))
+        self.Data = torch.cat([self.Data[:, OtherPos], CuratedAngles], dim=1)
+        print('####\nAnlges at position %s have been converted to Sin and Cos and put at the last columns of the Data.'%(AnglePos))
+        print('####')
         
 ####### Loss function(s), with "input" in (0,1) interval
 class _Loss(Module):
