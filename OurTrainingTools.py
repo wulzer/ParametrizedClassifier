@@ -5,6 +5,10 @@ from torch import nn
 from torch.nn.modules import Module
 from tabulate import tabulate
 
+random_seed = 1789
+torch.manual_seed(random_seed)
+print('=========== Random Seed: %d ==========='%(random_seed))
+
 class DataFile():
 ### Reads sample file Info (string), Parameters (list), Values (torch array), Data (torch array) and Weights (torch array)
 ### FilePath is the path of the input file
