@@ -3,9 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch import nn
 from torch.nn.modules import Module
+from torch.nn import CrossEntropyLoss
 from tabulate import tabulate
 
-random_seed = 1789
+random_seed = torch.randint(0, 1339, (1,)).item()
 torch.manual_seed(random_seed)
 print('=========== Random Seed: %d ==========='%(random_seed))
 
@@ -96,8 +97,10 @@ class OurTrainingData():
             self.BSMDataFiles, self.BSMNDList)]
         self.BSMWeightsList = [DF.Weights[:N] for (DF, N) in zip(
             self.BSMDataFiles, self.BSMNDList)] 
+        self.BSMXSList = [DF.XS for DF in self.BSMDataFiles]
         self.BSMParValList =  [torch.ones(N, dtype=torch.double)*DF.Values for (DF, N) in zip(self.BSMDataFiles, self.BSMNDList)]
         self.BSMTargetList = [torch.ones(N, dtype=torch.double) for N in self.BSMNDList] 
+        
         
 ####### Load SM data (stored in SMDataFiles)
         if type(SMfilepathlist) == list:
@@ -108,7 +111,7 @@ class OurTrainingData():
                 for path in SMfilepathlist:
                     temp =  DataFile(path, verbose=verbose)
                     if( (temp.Process == self.Process) and (temp.Parameters == 'SM') and (temp.Values == 0.) ):
-                       self.SMDataFiles.append(temp)
+                        self.SMDataFiles.append(temp)
                     else:
                         print('File not valid: ' + path)
                         print('Parameters = ' + str(temp.Parameters) + ', Process = ' + str(temp.Process) 
@@ -145,6 +148,10 @@ class OurTrainingData():
         self.SMWeights = torch.cat(
             [DF.Weights[:N] for (DF, N) in zip(self.SMDataFiles, SMNLimits)]
             , 0)
+        self.SMXSList = [DF.XS for DF in self.SMDataFiles]
+        idx_random = torch.randperm(self.SMND)
+        self.SMData = self.SMData[idx_random, :]
+        self.SMWeights = self.SMWeights[idx_random]
 
 ####### Break SM data in blocks to be paired with BSM data (stored in UsedSMNDList, UsedSMDataList, UsedSMWeightsList, UsedSMParValList, UsedSMTargetList)
         BSMNRatioDataList = [torch.tensor(1., dtype=torch.double)*n/sum(self.BSMNDList
@@ -211,7 +218,7 @@ class OurTrainingData():
     def CurateAngles(self, AnglePos):
         Angles = self.Data[:, AnglePos]
         CuratedAngles = torch.cat([torch.sin(Angles), torch.cos(Angles)], dim=1)
-        OtherPos = list(set(range(self.Data.size(1)))-set([3,5]))
+        OtherPos = list(set(range(self.Data.size(1)))-set(AnglePos))
         self.Data = torch.cat([self.Data[:, OtherPos], CuratedAngles], dim=1)
         print('####\nAnlges at position %s have been converted to Sin and Cos and put at the last columns of the Data.'%(AnglePos))
         print('####')
@@ -224,6 +231,7 @@ class _Loss(Module):
             self.reduction = _Reduction.legacy_get_string(size_average, reduce)
         else:
             self.reduction = reduction
+            
 class WeightedSELoss(_Loss):
     __constants__ = ['reduction']
         
@@ -231,6 +239,14 @@ class WeightedSELoss(_Loss):
         super(WeightedSELoss, self).__init__(size_average, reduce, reduction)
     def forward(self, input, target, weight):
         return torch.sum(torch.mul(weight, (input - target)**2))
+
+class WeightedCELoss(_Loss):
+    __constants__ = ['reduction']
+        
+    def __init__(self, size_average=None, reduce=None, reduction='mean'):
+        super(WeightedCELoss, self).__init__(size_average, reduce, reduction)
+    def forward(self, input, target, weight):
+        return torch.sum(torch.mul(weight, (1 - target)*torch.log(1./(1.-input))+target*torch.log(1./input)))
     
 ####### Loss function(s), with "input" in (0,1) interval
 def report_ETA(beginning, start, epochs, e, loss):
@@ -265,9 +281,13 @@ class OurModel(nn.Module):
             raise ValueError
 
 ### Define Layers
+        #self.LinearLayerList1  = nn.ModuleList([nn.Linear(self.Architecture[i], 
+        #    self.Architecture[i+1], bias=False) for i in range(len(self.Architecture)-2)])
         self.LinearLayerList1  = nn.ModuleList([nn.Linear(self.Architecture[i], 
             self.Architecture[i+1]) for i in range(len(self.Architecture)-2)])
         self.OutputLayer1 = nn.Linear(self.Architecture[-2], 1)       
+        #self.LinearLayerList2 = nn.ModuleList([nn.Linear(self.Architecture[i], 
+        #    self.Architecture[i+1], bias=False) for i in range(len(self.Architecture)-2)])
         self.LinearLayerList2 = nn.ModuleList([nn.Linear(self.Architecture[i], 
             self.Architecture[i+1]) for i in range(len(self.Architecture)-2)])
         self.OutputLayer2 = nn.Linear(self.Architecture[-2], 1)
@@ -299,7 +319,11 @@ class OurModel(nn.Module):
         
         for i, Layer in enumerate(self.LinearLayerList2):
             x2 = self.ActivationFunction(Layer(x2))
+        #x2 = torch.exp(self.OutputLayer2(x2)).squeeze()
+        #x2 = torch.abs(self.OutputLayer2(x2)).squeeze()
         x2 = self.OutputLayer2(x2).squeeze()
+        #x2 = self.OutputLayer2(x2).squeeze()
+        
         
         rho = (1 + torch.mul(x1, Parameters))**2 + (torch.mul(x2, Parameters))**2  
         return (rho.div(1.+rho)).view(-1, 1)
@@ -326,10 +350,10 @@ class OurModel(nn.Module):
                     DesignatedL1Max = m.weight.size(0)*m.weight.size(1)*self.L1perUnit
                     ClipL1NormLayer(DesignatedL1Max, m, Counter)
             else:
-                for mm in m:
+                for mm in m.children():
                     Counter +=1
                     with torch.no_grad():
-                        DesignatedL1Max = mm.weight.size(0)*m.weight.size(1)*self.L1perUnit
+                        DesignatedL1Max = mm.weight.size(0)*mm.weight.size(1)*self.L1perUnit
                         ClipL1NormLayer(DesignatedL1Max, mm, Counter)
         return 
     
@@ -434,7 +458,7 @@ class OurTrainer(nn.Module):
         self.NumberOfEpochs = NumEpochs
         self.SaveAfterEpoch = lambda :[self.NumberOfEpochs,]
         self.InitialLearningRate = LearningRate
-        ValidCriteria = {'Quadratic': WeightedSELoss()}
+        ValidCriteria = {'Quadratic': WeightedSELoss(), 'CE':WeightedCELoss(), 'BCE':CrossEntropyLoss()}
         try:
             self.Criterion = ValidCriteria[LossFunction]
         except KeyError:
@@ -471,7 +495,7 @@ class OurTrainer(nn.Module):
             print(str(estimate) + ' GB')
             return estimate
         
-    def Train(self, model, Data, Parameters, Labels, Weights, bs = 100000, L1perUnit=None, UseGPU=True, Name="", Folder=os.getcwd()):
+    def Train(self, model, Data, Parameters, Labels, Weights, bs = 100000, L1perUnit=None, UseGPU=True, Name="", Folder=os.getcwd(), WeightClipping=False, L1Max=1):
         
         tempmodel = copy.deepcopy(model)
         tempmodel.cuda()
@@ -483,19 +507,28 @@ class OurTrainer(nn.Module):
         Optimiser = self.Optimiser(tempmodel.parameters(), self.InitialLearningRate)
         mini_batch_size = bs
         beginning = start = time.time()
+        
+        if WeightClipping:
+            tempmodel.GetL1Bound(L1Max)
+        
         for e in range(self.NumberOfEpochs):
+            total_loss  = 0
             #print("epoch")
             Optimiser.zero_grad()
             for b in range(0, Data.size(0), mini_batch_size):
                 torch.cuda.empty_cache()
                 output          = tempmodel.Forward(tempData[b:b+mini_batch_size], tempParameters[b:b+mini_batch_size])
                 loss            = self.Criterion(output, tempLabels[b:b+mini_batch_size].reshape(-1,1), 
-                                                 tempWeights[b:b+mini_batch_size].reshape(-1, 1))               
+                                                 tempWeights[b:b+mini_batch_size].reshape(-1, 1))
+                total_loss += loss
                 loss.backward()
             Optimiser.step()
             
+            if WeightClipping:
+                tempmodel.ClipL1Norm()
+            
             if (e+1) in self.SaveAfterEpoch():
-                start       = report_ETA(beginning, start, self.NumberOfEpochs, e+1, loss)
+                start       = report_ETA(beginning, start, self.NumberOfEpochs, e+1, total_loss)
                 tempmodel.Save(Name + "%d epoch"%(e+1), Folder, csvFormat=True)
         
         tempmodel.Save(Name + 'Final', Folder, csvFormat=True)
@@ -507,7 +540,6 @@ class OurTrainer(nn.Module):
         
     def SetInitialLearningRate(self,ILR):
         self.InitialLearningRate = ILR
-        self.Optimiser = torch.optim.Adam(self.parameters(), self.InitialLearningRate)
         
     def SetSaveAfterEpochs(self,SAE):
         SAE.sort()

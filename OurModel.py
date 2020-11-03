@@ -275,7 +275,7 @@ class OurTrainer(nn.Module):
             
             if (e+1) in self.SaveAfterEpoch():
                 start       = report_ETA(beginning, start, self.NumberOfEpochs, e+1, loss)
-                tempmodel.Save(Name + "%d epoch"%(e+1), Folder)
+                tempmodel.Save(Name + "%d epoch"%(e+1), Folder, csvFormat=True)
         
         tempmodel.Save(Name + 'Final', Folder, csvFormat=True)
         
